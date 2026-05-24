@@ -1,18 +1,23 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, Receipt, Fuel, Pencil, X, Search, IndianRupee, Navigation } from 'lucide-react';
+import { Plus, Trash2, Receipt, Fuel, Pencil, X, Search, Navigation, IndianRupee } from 'lucide-react';
 import { useAppContext } from '../store/AppContext';
 
 const Expenses = () => {
-  const { trips, expenses, addExpense, deleteExpense, updateExpense } = useAppContext();
+  // Pull currentUser to access the custom driver allowance
+  const { trips, expenses, addExpense, deleteExpense, updateExpense, currentUser } = useAppContext();
 
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Use the custom driver allowance from the profile, default to 300
+  const driverAllowanceRate = currentUser?.driverAllowance ?? 300;
 
   const [newExpense, setNewExpense] = useState({
     tripId: '',
     date: new Date().toISOString().split('T')[0],
     fuel: '',
     tolls: '',
+    other: '', // <-- NEW: Other expenses field
     driverPaid: false
   });
 
@@ -20,22 +25,24 @@ const Expenses = () => {
   const totalExpense = useMemo(() => {
     const fuelCost = Number(newExpense.fuel || 0);
     const tollsCost = Number(newExpense.tolls || 0);
-    const driverCost = newExpense.driverPaid ? 300 : 0;
-    return fuelCost + tollsCost + driverCost;
-  }, [newExpense.fuel, newExpense.tolls, newExpense.driverPaid]);
+    const otherCost = Number(newExpense.other || 0);
+    const driverCost = newExpense.driverPaid ? driverAllowanceRate : 0;
+    return fuelCost + tollsCost + otherCost + driverCost;
+  }, [newExpense.fuel, newExpense.tolls, newExpense.other, newExpense.driverPaid, driverAllowanceRate]);
 
-  // 2. NEW Feature: Quick Stats for the top of the page
+  // 2. Quick Stats for the top of the page (Updated with 'Other')
   const stats = useMemo(() => {
     return expenses.reduce((acc, exp) => {
-      acc.fuel += exp.fuel;
-      acc.tolls += exp.tolls;
-      acc.driver += exp.driverCharge;
-      acc.total += exp.totalExpense;
+      acc.fuel += exp.fuel || 0;
+      acc.tolls += exp.tolls || 0;
+      acc.other += exp.other || 0;
+      acc.driver += exp.driverCharge || 0;
+      acc.total += exp.totalExpense || 0;
       return acc;
-    }, { fuel: 0, tolls: 0, driver: 0, total: 0 });
+    }, { fuel: 0, tolls: 0, other: 0, driver: 0, total: 0 });
   }, [expenses]);
 
-  // 3. NEW Feature: Search Filtering & Smart Sorting (Newest First)
+  // 3. Search Filtering & Smart Sorting
   const filteredAndSortedExpenses = useMemo(() => {
     return expenses
       .filter(exp => exp.tripDetails.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -55,8 +62,9 @@ const Expenses = () => {
       date: newExpense.date,
       fuel: Number(newExpense.fuel || 0),
       tolls: Number(newExpense.tolls || 0),
+      other: Number(newExpense.other || 0), // Save to DB
       driverPaid: newExpense.driverPaid,
-      driverCharge: newExpense.driverPaid ? 300 : 0,
+      driverCharge: newExpense.driverPaid ? driverAllowanceRate : 0,
       totalExpense: totalExpense
     };
 
@@ -72,6 +80,7 @@ const Expenses = () => {
       date: new Date().toISOString().split('T')[0],
       fuel: '',
       tolls: '',
+      other: '',
       driverPaid: false
     });
   };
@@ -83,6 +92,7 @@ const Expenses = () => {
       date: expense.date,
       fuel: expense.fuel,
       tolls: expense.tolls,
+      other: expense.other || '', // Load existing 'other' data safely
       driverPaid: expense.driverPaid
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -95,6 +105,7 @@ const Expenses = () => {
       date: new Date().toISOString().split('T')[0],
       fuel: '',
       tolls: '',
+      other: '',
       driverPaid: false
     });
   };
@@ -111,15 +122,19 @@ const Expenses = () => {
         </div>
       </div>
 
-      {/* NEW: Quick Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Quick Stats Row - Now 5 Columns */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-xs sm:text-sm text-gray-500 mb-1">Total Fuel Spend</p>
+          <p className="text-xs sm:text-sm text-gray-500 mb-1">Total Fuel</p>
           <p className="text-lg sm:text-xl font-bold text-gray-800">₹{stats.fuel.toLocaleString()}</p>
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-xs sm:text-sm text-gray-500 mb-1">Total Tolls/Parking</p>
+          <p className="text-xs sm:text-sm text-gray-500 mb-1">Total Tolls</p>
           <p className="text-lg sm:text-xl font-bold text-gray-800">₹{stats.tolls.toLocaleString()}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <p className="text-xs sm:text-sm text-gray-500 mb-1">Misc / Other</p>
+          <p className="text-lg sm:text-xl font-bold text-gray-800">₹{stats.other.toLocaleString()}</p>
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
           <p className="text-xs sm:text-sm text-gray-500 mb-1">Driver Payouts</p>
@@ -164,7 +179,6 @@ const Expenses = () => {
                 required
               >
                 <option value="">-- Choose a trip --</option>
-                {/* Sort trips in dropdown so newest are at the top */}
                 {[...trips].sort((a,b) => new Date(b.date) - new Date(a.date)).map(trip => (
                   <option key={trip.id} value={trip.id}>
                     {new Date(trip.date).toLocaleDateString()} | {trip.startLoc} → {trip.endLoc}
@@ -184,7 +198,7 @@ const Expenses = () => {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1 flex items-center gap-1">
                   <Fuel size={14} /> Fuel (₹)
@@ -207,13 +221,23 @@ const Expenses = () => {
                   onChange={(e) => setNewExpense({...newExpense, tolls: e.target.value})}
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Misc / Other (₹)</label>
+                <input 
+                  type="number" 
+                  placeholder="0"
+                  className="w-full p-2.5 sm:p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 text-sm"
+                  value={newExpense.other}
+                  onChange={(e) => setNewExpense({...newExpense, other: e.target.value})}
+                />
+              </div>
             </div>
 
             {/* Driver Toggle */}
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 mt-2">
               <div className="pr-2">
                 <p className="text-sm font-medium text-gray-700">Driver Allowance</p>
-                <p className="text-xs text-gray-500 leading-tight mt-0.5">Add ₹300 daily charge</p>
+                <p className="text-xs text-gray-500 leading-tight mt-0.5">Add ₹{driverAllowanceRate} daily charge</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer shrink-0">
                 <input 
@@ -258,7 +282,6 @@ const Expenses = () => {
         {/* Expense List Table */}
         <div className="lg:col-span-2 flex flex-col gap-4">
           
-          {/* NEW: Search Bar */}
           <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2">
             <Search size={18} className="text-gray-400 ml-2" />
             <input 
@@ -276,7 +299,7 @@ const Expenses = () => {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
                     <th className="p-4 font-semibold text-gray-600 text-sm whitespace-nowrap">Trip Details</th>
-                    <th className="p-4 font-semibold text-gray-600 text-sm whitespace-nowrap">Fuel & Tolls</th>
+                    <th className="p-4 font-semibold text-gray-600 text-sm whitespace-nowrap">Breakdown</th>
                     <th className="p-4 font-semibold text-gray-600 text-sm whitespace-nowrap">Driver</th>
                     <th className="p-4 font-semibold text-gray-600 text-sm whitespace-nowrap">Total</th>
                     <th className="p-4 font-semibold text-gray-600 text-center text-sm whitespace-nowrap">Actions</th>
@@ -292,11 +315,14 @@ const Expenses = () => {
                       <td className="p-4 text-sm text-gray-600 whitespace-nowrap">
                         <div className="flex items-center gap-1"><Fuel size={12} className="text-gray-400"/> ₹{exp.fuel}</div>
                         <div className="flex items-center gap-1 mt-1"><Navigation size={12} className="text-gray-400"/> ₹{exp.tolls}</div>
+                        {exp.other > 0 && (
+                          <div className="flex items-center gap-1 mt-1"><Plus size={12} className="text-gray-400"/> ₹{exp.other}</div>
+                        )}
                       </td>
                       <td className="p-4 text-sm">
                         {exp.driverPaid ? (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 whitespace-nowrap">
-                            Paid (₹300)
+                            Paid (₹{exp.driverCharge})
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
